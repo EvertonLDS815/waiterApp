@@ -8,7 +8,7 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 const port = 3000 || process.env.PORT;
-const { Product, Table, Order, User, Waiter } = require('./models/model');
+const { Product, Table, Order, User } = require('./models/model');
 
 app.use(express.json());
 app.use(cors());
@@ -168,6 +168,58 @@ app.post('/product', upload.single('image'), async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// rota table
+app.get('/tables', async (req, res) => {
+try {
+  const table = await Table.find();
+  return res.status(200).json(table);
+  
+} catch (err) {
+  return res.status(500).json(err);
+}
+});
+app.post('/table', async (req, res) => {
+  try {
+    const { number } = req.body;
+    const table = new Table({number});
+
+    await table.save();
+    console.log(table)
+    return res.status(201).json(table);
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ error: err.message });
+}
+});
+app.patch('/table/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { number } = req.body;
+
+    // Validações básicas
+    if (!id || !number) {
+      return res.status(400).json({ error: 'ID e número são obrigatórios' });
+    }
+
+    // Atualiza o campo "number"
+    const updatedTable = await Table.findByIdAndUpdate(
+      id,
+      { number },
+      { new: true } // Retorna o documento atualizado
+    );
+
+    if (!updatedTable) {
+      return res.status(404).json({ error: 'Mesa não encontrada' });
+    }
+
+    res.status(200).json(updatedTable);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao atualizar o número da mesa' });
+  }
+});
+
 
 
 
