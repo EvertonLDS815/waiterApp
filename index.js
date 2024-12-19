@@ -213,14 +213,74 @@ app.patch('/table/:id', async (req, res) => {
       return res.status(404).json({ error: 'Mesa não encontrada' });
     }
 
-    res.status(200).json(updatedTable);
+    return res.status(200).json(updatedTable);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erro ao atualizar o número da mesa' });
   }
 });
 
+// rota table
+app.get('/orders', async (req, res) => {
+  try {
+    const order = await Order.find();
+    return res.status(200).json(order);
+    
+  } catch (err) {
+    return res.status(500).json(err);
+  }
+});
 
+app.post('/order', async (req, res) => {
+  try {
+    const order = req.body;
+    const neworder = new Order(order);
 
+    await neworder.save();
+    return res.status(201).json(neworder);
+  } catch (err) {
+    return res.status(500).json(err);
+}
+});
+
+app.patch('/order/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const updatedOrder = await Order.findOneAndUpdate(
+      {_id: id},
+      [
+        {
+          $set: {
+            status: {
+              $cond: { if: { $eq: ["$status", "pending"] }, then: "completed", else: "pending" },
+            },
+          },
+        },
+      ],
+      { new: true } // Retorna o documento atualizado
+    );
+
+    if (!updatedOrder) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    return res.sendStatus(204);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json(err);
+  }
+});
+
+app.delete('/order/:id', async (req, res) => {
+try {
+  const {id} = req.params;
+  await Order.findOneAndDelete({_id: id});
+  return res.sendStatus(204);
+  
+} catch (err) {
+  return res.status(500).json(err);
+}
+});
 
 app.listen(port, () => console.log(`Server is running on http://localhost:${port}`));
