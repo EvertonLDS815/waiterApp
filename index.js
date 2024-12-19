@@ -3,6 +3,8 @@ const cors = require('cors');
 require('dotenv').config();
 const multer = require('multer');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const port = 3000 || process.env.PORT;
@@ -12,33 +14,104 @@ app.use(express.json());
 app.use(cors());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Rota User
-app.get('/users', async (req, res) => {
-  try {
-    const users = await User.find();
-    return res.status(200).json(users);
-  } catch (err) {
-    return res.status(500).json(err);
-  }
-});
+// Create User
 app.post('/user', async (req, res) => {
   try {
-    const user = await User.create();
-    return res.status(201).json(user);
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    const user = new User({ email, password: hashedPassword });
+    await user.save();
+    res.status(201).json(user);
   } catch (err) {
-    return res.status(500).json(err);
-  }
-});
-app.get('/user/:id', async (req, res) => {
-  try {
-    const {id} = req.params;
-    const user = await User.find({_id: id});
-    return res.status(200).json(user);
-  } catch (err) {
-    return res.status(500).json(err);
+    res.status(400).json({error: err});
+    console.error(err);
   }
 });
 
+// Login User
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+
+    if (user && await bcrypt.compare(password, user.password)) {
+      // Configura o token com duração de 1 dia
+      const token = jwt.sign(
+        { userId: user._id }, 
+        process.env.JWT_SECRET, 
+        { expiresIn: '1d' } // Duração de 1 dia
+      );
+      res.json({ token });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const auth = (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({error: 'Access denied. No token provided.'});
+    }
+  
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.userId = decoded.userId;
+      next();
+    } catch (err) {
+        return res.status(400).json(err);
+    }
+};
+
+// Get Email only
+app.get('/user', auth, async (req, res) => {
+  try {
+    const {email} = await User.findById(req.userId);
+    if (!email) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    return res.json(email);
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.patch('/users/:id', auth, async (req, res) => {
+  try {
+    const user = await User.findOneAndUpdate(
+      req.userId,
+      [
+        {
+          $set: {
+            role: {
+              $cond: { if: { $eq: ["$role", "user"] }, then: "waiter", else: "user" },
+            },
+          },
+        },
+      ],
+      { new: true } // Retorna o documento atualizado
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: "Product not found or unauthorized" });
+    }
+
+    return res.status(200).json(user);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(err);
+  }
+});
 // Configuração do Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -64,7 +137,7 @@ const upload = multer({
   },
 });
 // Rota Products
-app.get('/product', async (req, res) => {
+app.get('/product', auth, async (req, res) => {
   try {
     const product = await Product.find();
     return res.status(200).json(product);
@@ -75,7 +148,7 @@ app.get('/product', async (req, res) => {
 });
 app.post('/product', upload.single('image'), async (req, res) => {
   try {
-    const { name, description, price } = req.body;
+    const { name, price } = req.body;
 
     if (!req.file) {
       return res.status(400).json({ error: 'Imagem é obrigatória' });
