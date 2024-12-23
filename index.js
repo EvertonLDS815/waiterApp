@@ -48,7 +48,7 @@ app.post('/login', async (req, res) => {
         process.env.JWT_SECRET, 
         { expiresIn: '1d' } // Duração de 1 dia
       );
-      res.json({ token });
+      return res.status(201).json( {token});
     } else {
       res.status(401).json({ error: "Invalid credentials" });
     }
@@ -61,35 +61,48 @@ app.post('/login', async (req, res) => {
 const auth = (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
+
+    // Verifica se o token existe
     if (!token) {
-      return res.status(401).json({error: 'Access denied. No token provided.'});
+      return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
-  
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.userId = decoded.userId;
-      next();
-    } catch (err) {
-        return res.status(400).json(err);
+
+    // Tenta verificar e decodificar o token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Armazena o ID do usuário no request para acesso posterior
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    // Diferencia erros de token expirado e outros erros de token
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired. Please log in again.' });
+    } else if (err.name === 'JsonWebTokenError') {
+      return res.status(401).json({ error: 'Invalid token. Access denied.' });
+    } else {
+      return res.status(400).json({ error: 'An error occurred during authentication.' });
     }
+  }
 };
+
 
 // Get Email only
 app.get('/user', auth, async (req, res) => {
   try {
-    const {email} = await User.findById(req.userId);
-    if (!email) {
+    const response = await User.findById(req.userId);
+    if (!response) {
       return res.status(404).json({ error: 'User not found' });
     }
-    return res.json(email);
+    return res.json(response);
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.patch('/users/:id', auth, async (req, res) => {
+app.patch('/user', auth, async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      req.userId,
+      {_id: req.userId},
       [
         {
           $set: {
@@ -105,7 +118,6 @@ app.patch('/users/:id', auth, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: "Product not found or unauthorized" });
     }
-
     return res.status(200).json(user);
   } catch (err) {
     console.error(err);
@@ -137,11 +149,10 @@ const upload = multer({
   },
 });
 // Rota Products
-app.get('/product', auth, async (req, res) => {
+app.get('/products', auth, async (req, res) => {
   try {
-    const product = await Product.find();
-    return res.status(200).json(product);
-    
+    const products = await Product.find();
+    return res.status(200).json(products);
   } catch (err) {
     return res.status(500).json(err);
   }
@@ -179,16 +190,27 @@ try {
   return res.status(500).json(err);
 }
 });
+
+app.get('/table/:id', async (req, res) => {
+  try {
+    const table = await Table.findById(req.params.id);
+    if (!table) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+    return res.json(table);
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.post('/table', async (req, res) => {
   try {
     const { number } = req.body;
     const table = new Table({number});
 
     await table.save();
-    console.log(table)
     return res.status(201).json(table);
   } catch (err) {
-    console.log(err);
     return res.status(500).json({ error: err.message });
 }
 });
@@ -220,14 +242,40 @@ app.patch('/table/:id', async (req, res) => {
   }
 });
 
-// rota table
-app.get('/orders', async (req, res) => {
+app.delete('/table/:id', async (req, res) => {
   try {
-    const order = await Order.find();
-    return res.status(200).json(order);
+    const {id} = req.params;
+    await Table.findOneAndDelete({_id: id});
+    return res.sendStatus(204);
     
   } catch (err) {
     return res.status(500).json(err);
+  }
+});
+
+// rota orders
+app.get('/orders', async (req, res) => {
+  try {
+    const order = await Order.find().populate('userId').populate('tableId').populate('items.productId');
+    return res.status(200).json(order);
+  } catch (err) {
+    return res.status(500).json(err);
+  }
+});
+
+app.get('/table/:id', async (req, res) => {
+  try {
+    const { id } = req.params;  // Pega o 'id' da tabela da URL
+    const table = await Table.findById(id);  // Encontra a tabela pelo 'id'
+
+    if (!table) {
+      return res.status(404).json({ message: 'Table not found' });
+    }
+
+    res.status(200).json(table);  // Retorna os dados da tabela
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

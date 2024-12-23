@@ -23,7 +23,7 @@ const Product = mongoose.model('product', productSchema);
 
 // Schema para Mesa (Table)
 const TableSchema = new mongoose.Schema({
-number: { type: Number, required: true, unique: true }, // Número da mesa
+number: { type: Number, required: true }, // Número da mesa
 });
 
 const Table = mongoose.model('table', TableSchema);
