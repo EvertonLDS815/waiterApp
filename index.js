@@ -31,7 +31,6 @@ app.post('/user', async (req, res) => {
     res.status(201).json(user);
   } catch (err) {
     res.status(400).json({error: err});
-    console.error(err);
   }
 });
 
@@ -50,18 +49,53 @@ app.post('/login', async (req, res) => {
       );
       return res.status(201).json( {token});
     } else {
-      res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
+  } catch (err) {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post('/admin', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // Verifica se o role é 'waiter'
+    if (user.role === 'waiter') {
+      return res.status(403).json({ error: "Access denied for waiters" });
+    }
+
+    // Verifica a senha
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // Gera o token
+    const token = jwt.sign(
+      { userId: user._id, role: user.role }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '1d' } // Duração de 1 dia
+    );
+
+    return res.status(201).json({ token });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
 
+
+
 const auth = (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-
+    
     // Verifica se o token existe
     if (!token) {
       return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -85,6 +119,19 @@ const auth = (req, res, next) => {
   }
 };
 
+app.get('/verify-role', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log(user.role)
+    return res.status(200).json({ role: user.role });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Get Email only
 app.get('/user', auth, async (req, res) => {
@@ -99,15 +146,17 @@ app.get('/user', auth, async (req, res) => {
   }
 });
 
-app.patch('/user', auth, async (req, res) => {
+app.patch('/user/:id', async (req, res) => {
+
+  const {id} = req.params;
   try {
     const user = await User.findOneAndUpdate(
-      {_id: req.userId},
+      {_id: id},
       [
         {
           $set: {
             role: {
-              $cond: { if: { $eq: ["$role", "user"] }, then: "waiter", else: "user" },
+              $cond: { if: { $eq: ["$role", "Admin"] }, then: "Waiter", else: "Admin" },
             },
           },
         },
@@ -120,7 +169,6 @@ app.patch('/user', auth, async (req, res) => {
     }
     return res.status(200).json(user);
   } catch (err) {
-    console.error(err);
     return res.status(500).json(err);
   }
 });
@@ -151,7 +199,7 @@ const upload = multer({
 // Rota Products
 app.get('/products', auth, async (req, res) => {
   try {
-    const products = await Product.find();
+    const products = await Product.find().sort({createdAt: 1});
     return res.status(200).json(products);
   } catch (err) {
     return res.status(500).json(err);
@@ -237,7 +285,6 @@ app.patch('/table/:id', async (req, res) => {
 
     return res.status(200).json(updatedTable);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: 'Erro ao atualizar o número da mesa' });
   }
 });
@@ -256,37 +303,43 @@ app.delete('/table/:id', async (req, res) => {
 // rota orders
 app.get('/orders', async (req, res) => {
   try {
-    const order = await Order.find().populate('userId').populate('tableId').populate('items.productId');
+    const order = await Order.find().sort({createdAt: 1}).populate('userId').populate('tableId').populate('items.productId');
     return res.status(200).json(order);
   } catch (err) {
     return res.status(500).json(err);
   }
 });
 
-app.get('/table/:id', async (req, res) => {
+app.get('/order/table/:id', async (req, res) => {
   try {
-    const { id } = req.params;  // Pega o 'id' da tabela da URL
-    const table = await Table.findById(id);  // Encontra a tabela pelo 'id'
+    const { id } = req.params; // Pega o 'id' da tabela da URL
 
-    if (!table) {
-      return res.status(404).json({ message: 'Table not found' });
+    // Encontra a ordem onde o 'tableId' é igual ao 'id' fornecido
+    const order = await Order.findOne({ tableId: id }).populate('userId').populate('tableId').populate('items.productId');
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
     }
 
-    res.status(200).json(table);  // Retorna os dados da tabela
+    return res.status(200).json(order); // Retorna os dados da ordem
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
-app.post('/order', async (req, res) => {
+app.post('/order', auth, async (req, res) => {
   try {
     const order = req.body;
-    const neworder = new Order(order);
+    if (order.items.length === 0) {
+      return res.status(400).json('Continue sem pedir seu miseravi!')
+    }
+    const newOrder = await Order.create(order);
 
-    await neworder.save();
-    return res.status(201).json(neworder);
+    await newOrder.save();
+    return res.status(201).json(newOrder);
   } catch (err) {
+    console.log(err);
     return res.status(500).json(err);
 }
 });
@@ -315,7 +368,6 @@ app.patch('/order/:id', auth, async (req, res) => {
 
     return res.sendStatus(204);
   } catch (err) {
-    console.error(err);
     res.status(500).json(err);
   }
 });
@@ -323,7 +375,8 @@ app.patch('/order/:id', auth, async (req, res) => {
 app.delete('/order/:id', async (req, res) => {
 try {
   const {id} = req.params;
-  await Order.findOneAndDelete({_id: id});
+  const order = await Order.findOneAndDelete({_id: id});
+  await Table.findOneAndDelete(order.tableId);
   return res.sendStatus(204);
   
 } catch (err) {
