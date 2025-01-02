@@ -51,7 +51,10 @@ const orderSchema = new mongoose.Schema({
 const Order = mongoose.model('order', orderSchema);
 
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: '*', // Permite todas as origens
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+}));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const server = http.createServer(app);
