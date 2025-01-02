@@ -91,6 +91,7 @@ app.post('/login', async (req, res) => {
         process.env.JWT_SECRET, 
         { expiresIn: '1d' } // Duração de 1 dia
       );
+      console.log(user, token)
       return res.status(201).json( {token});
     } else {
       return res.status(401).json({ error: "Invalid credentials" });
@@ -162,19 +163,6 @@ const auth = (req, res, next) => {
     }
   }
 };
-
-app.get('/verify-role', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    return res.status(200).json({ role: user.role });
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 // Get Email only
 app.get('/user', auth, async (req, res) => {
