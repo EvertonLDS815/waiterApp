@@ -12,12 +12,13 @@ const app = express();
 const port = 3000 || process.env.PORT;
 const { Product, Table, Order, User } = require('./models/model');
 
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 const server = http.createServer(app);
 const io = new Server(server);;
 
-app.use(express.json());
-app.use(cors());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Create User
 app.post('/user', async (req, res) => {
