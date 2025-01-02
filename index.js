@@ -52,7 +52,10 @@ const Order = mongoose.model('order', orderSchema);
 
 app.use(express.json());
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: [
+    'http://10.0.0.110:3001',
+    'http://10.0.0.110:3002'
+  ],
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
 }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -94,7 +97,6 @@ app.post('/login', async (req, res) => {
         process.env.JWT_SECRET, 
         { expiresIn: '1d' } // Duração de 1 dia
       );
-      console.log(user, token)
       return res.status(201).json( {token});
     } else {
       return res.status(401).json({ error: "Invalid credentials" });
@@ -423,4 +425,4 @@ try {
 }
 });
 
-server.listen(port, () => console.log(`Server is running on http://localhost:${port}`));
+server.listen(port, '0.0.0.0', () => console.log(`Server is running on http://localhost:${port}`));
