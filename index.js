@@ -52,7 +52,7 @@ const Order = mongoose.model('order', orderSchema);
 
 app.use(express.json());
 app.use(cors({
-  origin: '*', // Permite todas as origens
+  origin: ['http://localhost:5173', 'http://localhost:5174'],
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
 }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
