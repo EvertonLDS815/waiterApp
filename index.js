@@ -4,16 +4,54 @@ require('dotenv').config();
 const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const http = require('http');
 const { Server } = require('socket.io');
 
 const app = express();
 const port = 3000 || process.env.PORT;
-const { Product, Table, Order, User } = require('./models/model');
+mongoose.connect(process.env.DB_URI);
 
-app.use(cors());
+// Schemas 
+// Schema para Usuário (User)
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  role: { type: String, enum: ['waiter', 'admin'], default: 'waiter' },
+});
+const User = mongoose.model('user', userSchema);
+
+const productSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  price: { type: Number, required: true },
+  imageURL: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+const Product = mongoose.model('product', productSchema);
+
+const tableSchema = new mongoose.Schema({
+  number: { type: Number, required: true },
+});
+const Table = mongoose.model('table', tableSchema);
+
+const orderSchema = new mongoose.Schema({
+  tableId: { type: mongoose.Schema.Types.ObjectId, ref: 'table', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'user', required: true },
+  items: [
+      {
+          productId: { type: mongoose.Schema.Types.ObjectId, ref: 'product', required: true },
+          quantity: { type: Number, required: true },
+      },
+  ],
+  createdAt: { type: Date, default: Date.now },
+  status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
+});
+
+const Order = mongoose.model('order', orderSchema);
+
 app.use(express.json());
+app.use(cors());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const server = http.createServer(app);
