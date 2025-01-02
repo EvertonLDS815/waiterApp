@@ -5,10 +5,15 @@ const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
 const port = 3000 || process.env.PORT;
 const { Product, Table, Order, User } = require('./models/model');
+
+const server = http.createServer(app);
+const io = new Server(server);;
 
 app.use(express.json());
 app.use(cors());
@@ -126,7 +131,6 @@ app.get('/verify-role', auth, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log(user.role)
     return res.status(200).json({ role: user.role });
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
@@ -332,16 +336,21 @@ app.post('/order', auth, async (req, res) => {
   try {
     const order = req.body;
     if (order.items.length === 0) {
-      return res.status(400).json('Continue sem pedir seu miseravi!')
+      return res.status(400).json('Continue sem pedir seu miseravi!');
     }
-    const newOrder = await Order.create(order);
 
-    await newOrder.save();
-    return res.status(201).json(newOrder);
+    const createdOrder = await Order.create(order);
+    const orderDetails = await Order.findById(createdOrder._id)
+      .populate('userId')
+      .populate('tableId')
+      .populate('items.productId');
+
+    io.emit('orders@new', orderDetails);
+    return res.status(201).json(orderDetails);  // Envia a resposta para o frontend
   } catch (err) {
-    console.log(err);
-    return res.status(500).json(err);
-}
+    console.error(err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
 });
 
 app.patch('/order/:id', auth, async (req, res) => {
@@ -384,4 +393,4 @@ try {
 }
 });
 
-app.listen(port, () => console.log(`Server is running on http://localhost:${port}`));
+server.listen(port, () => console.log(`Server is running on http://localhost:${port}`));
