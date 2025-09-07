@@ -10,15 +10,25 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const app = express();
-const port = 3000 || process.env.PORT;
-mongoose.connect(process.env.DB_URI);
+const port = 3000 || process.env.PORT;            
+app.use(express.json());                                                                                  
+mongoose.connect(process.env.DB_URI)
+.then(() => {
+  console.log('✅ MongoDB conectado');
+
+  // Somente agora iniciamos o servidor
+  server.listen(port, () => console.log(`Server is running on http://localhost:${port}`));
+})
+.catch((err) => {
+  console.error('❌ Erro ao conectar ao MongoDB:', err.message);
+});
 
 // Schemas 
 // Schema para Usuário (User)
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['waiter', 'admin'], default: 'waiter' },
+  role: { type: String, enum: ['Waiter', 'Admin'], default: 'Waiter' },
 });
 const User = mongoose.model('user', userSchema);
 
@@ -50,58 +60,84 @@ const orderSchema = new mongoose.Schema({
 
 const Order = mongoose.model('order', orderSchema);
 
-app.use(express.json());
 app.use(cors({
   origin: [
     'http://10.0.0.110:3001',
-    'http://10.0.0.110:3002'
+    'http://10.0.0.110:3002',
+    'https://adminapp-el.netlify.app',
   ],
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
 }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const server = http.createServer(app);
-const io = new Server(server);;
+const io = new Server(server);
 
 
 // Create User
-app.post('/user', async (req, res) => {
+app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({ error: 'Email e senha são obrigatórios' });
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(401).json({ error: 'Email não encontrado' });
     }
-    const user = new User({ email, password: hashedPassword });
-    await user.save();
-    res.status(201).json(user);
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Senha incorreta' });
+    }
+
+    // ✅ Geração do token JWT
+    const token = jwt.sign(
+      { userId: user._id },           // payload
+      process.env.JWT_SECRET,         // chave secreta
+      { expiresIn: '1d' }             // validade de 1 dia
+    );
+
+    // ✅ Retorna o token no JSON
+    res.status(200).json({
+      message: 'Login bem-sucedido',
+      token,
+      user: {
+        _id: user._id,
+        email: user.email,
+        // outros campos públicos se necessário
+      }
+    });
+
   } catch (err) {
-    res.status(400).json({error: err});
+    console.error('Erro no login:', err);
+    res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
 
 // Login User
-app.post('/login', async (req, res) => {
+app.post('/create', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
 
-    if (user && await bcrypt.compare(password, user.password)) {
-      // Configura o token com duração de 1 dia
-      const token = jwt.sign(
-        { userId: user._id }, 
-        process.env.JWT_SECRET, 
-        { expiresIn: '1d' } // Duração de 1 dia
-      );
-      return res.status(201).json( {token});
-    } else {
-      return res.status(401).json({ error: "Invalid credentials" });
+    // Verifica se já existe usuário com esse email
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ error: "Email already in use" });
     }
+
+    // Criptografa a senha antes de salvar
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ email, password: hashedPassword });
+    await newUser.save();
+
+    return res.status(201).json({ message: "User created successfully" });
   } catch (err) {
+    console.error("Erro no cadastro:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -112,18 +148,18 @@ app.post('/admin', async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Access denied!" });
     }
 
     // Verifica se o role é 'waiter'
-    if (user.role === 'waiter') {
-      return res.status(403).json({ error: "Access denied for waiters" });
+    if (user.role === 'Waiter') {
+      return res.status(403).json({ error: "Access denied for waiters!" });
     }
 
     // Verifica a senha
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Invalid credentials!" });
     }
 
     // Gera o token
@@ -346,17 +382,15 @@ app.get('/orders', async (req, res) => {
   }
 });
 
-app.get('/order/table/:id', async (req, res) => {
+app.get('/order/checked', auth, async (req, res) => {
   try {
-    const { id } = req.params; // Pega o 'id' da tabela da URL
-
-    // Encontra a ordem onde o 'tableId' é igual ao 'id' fornecido
-    const order = await Order.findOne({ tableId: id }).populate('userId').populate('tableId').populate('items.productId');
+    const order = await Order.find({ userId: req.userId}).populate('userId').populate('tableId').populate('items.productId');
+    
 
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
-
+    
     return res.status(200).json(order); // Retorna os dados da ordem
   } catch (err) {
     console.error(err);
@@ -402,12 +436,17 @@ app.patch('/order/:id', auth, async (req, res) => {
       ],
       { new: true } // Retorna o documento atualizado
     );
-
+    
+    
+    const orderChecked = await Order.findById(updatedOrder._id).populate('userId').populate('tableId').populate('items.productId');
     if (!updatedOrder) {
       return res.status(404).json({ error: 'Order not found' });
     }
+    
 
-    return res.sendStatus(204);
+    io.emit('order@checked', orderChecked);
+
+    return res.status(200).json(orderChecked);
   } catch (err) {
     res.status(500).json(err);
   }
@@ -415,14 +454,21 @@ app.patch('/order/:id', auth, async (req, res) => {
 
 app.delete('/order/:id', async (req, res) => {
 try {
-  const {id} = req.params;
-  const order = await Order.findOneAndDelete({_id: id});
-  await Table.findOneAndDelete(order.tableId);
-  return res.sendStatus(204);
+  const { id } = req.params;
+  try {
+    const deletedOrder = await Order.findByIdAndDelete(id);
+    if (deletedOrder) {
+      io.emit('order@deleted', deletedOrder); // Certifique-se de que deletedOrder tem _id
+      res.status(200).send(deletedOrder);
+    } else {
+      res.status(404).send({ error: 'Pedido não encontrado' });
+    }
+  } catch (error) {
+    console.error('Erro ao deletar pedido:', error);
+    res.status(500).send({ error: 'Erro no servidor' });
+  }
   
 } catch (err) {
   return res.status(500).json(err);
 }
 });
-
-server.listen(port, '0.0.0.0', () => console.log(`Server is running on http://localhost:${port}`));
