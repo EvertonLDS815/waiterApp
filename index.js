@@ -12,7 +12,10 @@ const { Server } = require('socket.io');
 const app = express();
 const port = 3000 || process.env.PORT;            
 app.use(express.json());                                                                                  
-mongoose.connect(process.env.DB_URI)
+mongoose.connect(process.env.DB_URI, {
+  useNewUrlParser: true, 
+  useUnifiedTopology: true }
+)
 .then(() => {
   console.log('✅ MongoDB conectado');
 
@@ -74,7 +77,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 
-// Create User
+// Login User
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -119,7 +122,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Login User
+// Create User
 app.post('/create', async (req, res) => {
   try {
     const { email, password } = req.body;
