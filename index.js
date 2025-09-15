@@ -296,12 +296,24 @@ app.post('/product', upload.single('image'), async (req, res) => {
       imageURL,
     });
 
+    io.emit('products@new', product);
+
     await product.save();
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+app.delete('/product/:id', async (req, res) => {
+  try {
+    const {id} = req.params;
+    const product = await Product.findOneAndDelete({_id: id});
+    io.emit('order@deleted', product);
+    return res.sendStatus(204); // Sucesso, sem conteúdo para retornar
+  } catch (err) {
+    return res.status(500).json(err);
+}});
 
 // rota table
 app.get('/tables', async (req, res) => {
