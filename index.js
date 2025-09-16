@@ -9,6 +9,9 @@ const jwt = require('jsonwebtoken');
 const http = require('http');
 const { Server } = require('socket.io');
 
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
 const app = express();
 const port = 3000 || process.env.PORT;            
 app.use(express.json());                                                                                  
@@ -68,6 +71,7 @@ app.use(cors({
     'http://10.0.0.110:3001',
     'http://10.0.0.110:3002',
     'https://adminapp-el.netlify.app',
+    'https://waiterapp-el.netlify.app'
   ],
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
 }));
@@ -248,29 +252,26 @@ app.patch('/user/:id', async (req, res) => {
   }
 });
 // Configuração do Multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Pasta onde as imagens serão salvas
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`); // Nome único para a imagem
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'meu-projeto', // Nome da pasta
+    allowed_formats: ['jpg', 'png', 'jpeg', 'gif'],
+    public_id: (req, file) => {
+      const nameWithoutExt = path.parse(file.originalname).name; // remove extensão
+      return `${Date.now()}-${nameWithoutExt}`; // nome único sem duplicar a extensão
+    },
   },
 });
 
-const upload = multer({
-  storage,
-  fileFilter: (req, file, cb) => {
-    const fileTypes = /jpeg|jpg|png|gif/; // Tipos de arquivo permitidos
-    const extname = fileTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimeType = fileTypes.test(file.mimetype);
+const upload = multer({storage});
 
-    if (extname && mimeType) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Apenas imagens são permitidas!'));
-    }
-  },
-});
 // Rota Products
 app.get('/products', auth, async (req, res) => {
   try {
@@ -284,11 +285,11 @@ app.post('/product', upload.single('image'), async (req, res) => {
   try {
     const { name, price } = req.body;
 
-    if (!req.file) {
+    if (!req.file || !req.file.path) {
       return res.status(400).json({ error: 'Imagem é obrigatória' });
     }
 
-    const imageURL = `/uploads/${req.file.filename}`; // Caminho da imagem
+    const imageURL = req.file.path; // URL direta do Cloudinary
 
     const product = new Product({
       name,
@@ -296,24 +297,50 @@ app.post('/product', upload.single('image'), async (req, res) => {
       imageURL,
     });
 
+    await product.save();
+
     io.emit('products@new', product);
 
-    await product.save();
     res.status(201).json(product);
   } catch (error) {
+    console.error('❌ Erro ao salvar produto:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.delete('/product/:id', async (req, res) => {
   try {
-    const {id} = req.params;
-    const product = await Product.findOneAndDelete({_id: id});
+    const { id } = req.params;
+
+    // Encontra o produto primeiro
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ error: 'Produto não encontrado' });
+    }
+
+    // Remove a imagem do Cloudinary
+    // Aqui assumimos que product.imageURL é algo como "meu-projeto/1758026546-nome.jpg"
+    // Se tiver a URL completa, podemos extrair o public_id:
+    const publicId = product.imageURL
+      .split('/')
+      .slice(-2)
+      .join('/')
+      .split('.')[0]; // remove a extensão
+
+    await cloudinary.uploader.destroy(publicId);
+
+    // Remove o produto do banco de dados
+    await Product.findByIdAndDelete(id);
+
+    // Emite evento para o frontend
     io.emit('order@deleted', product);
-    return res.sendStatus(204); // Sucesso, sem conteúdo para retornar
+
+    return res.sendStatus(204);
   } catch (err) {
+    console.error(err);
     return res.status(500).json(err);
-}});
+  }
+});
 
 // rota table
 app.get('/tables', async (req, res) => {
