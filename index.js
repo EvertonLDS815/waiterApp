@@ -126,6 +126,16 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// List User
+app.get('/user', async (req, res) => {
+  try {
+  const user = await User.find();
+  return res.status(200).json(user);
+  } catch (err) {
+    return res.status(500).json(err);
+  }
+});
+
 // Create User
 app.post('/create', async (req, res) => {
   try {
@@ -148,7 +158,7 @@ app.post('/create', async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 });
-
+// Login Admin
 app.post('/admin', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -343,16 +353,6 @@ app.delete('/product/:id', async (req, res) => {
 });
 
 // rota table
-app.get('/tables', async (req, res) => {
-try {
-  const table = await Table.find();
-  return res.status(200).json(table);
-  
-} catch (err) {
-  return res.status(500).json(err);
-}
-});
-
 app.get('/table/:id', async (req, res) => {
   try {
     const table = await Table.findById(req.params.id);
@@ -374,32 +374,6 @@ app.post('/table', async (req, res) => {
     return res.status(201).json(table);
   } catch (err) {
     return res.status(500).json({ error: err.message });
-}
-});
-app.patch('/table/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { number } = req.body;
-
-    // Validações básicas
-    if (!id || !number) {
-      return res.status(400).json({ error: 'ID e número são obrigatórios' });
-    }
-
-    // Atualiza o campo "number"
-    const updatedTable = await Table.findByIdAndUpdate(
-      id,
-      { number },
-      { new: true } // Retorna o documento atualizado
-    );
-
-    if (!updatedTable) {
-      return res.status(404).json({ error: 'Mesa não encontrada' });
-    }
-
-    return res.status(200).json(updatedTable);
-  } catch (err) {
-    res.status(500).json({ error: 'Erro ao atualizar o número da mesa' });
   }
 });
 
