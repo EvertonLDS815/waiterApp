@@ -223,7 +223,7 @@ const auth = (req, res, next) => {
 };
 
 // Get Email only
-app.get('/user', auth, async (req, res) => {
+app.get('/user/email', auth, async (req, res) => {
   try {
     const response = await User.findById(req.userId);
     if (!response) {
