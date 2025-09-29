@@ -127,7 +127,7 @@ app.post('/login', async (req, res) => {
 });
 
 // List User
-app.get('/user', async (req, res) => {
+app.get('/user', auth, async (req, res) => {
   try {
   const user = await User.find();
   return res.status(200).json(user);
