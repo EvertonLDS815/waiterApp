@@ -126,16 +126,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// List User
-app.get('/user', auth, async (req, res) => {
-  try {
-  const user = await User.find();
-  return res.status(200).json(user);
-  } catch (err) {
-    return res.status(500).json(err);
-  }
-});
-
 // Create User
 app.post('/create', async (req, res) => {
   try {
@@ -221,6 +211,15 @@ const auth = (req, res, next) => {
     }
   }
 };
+
+app.get('/user', auth, async (req, res) => {
+  try {
+  const user = await User.find();
+  return res.status(200).json(user);
+  } catch (err) {
+    return res.status(500).json(err);
+  }
+});
 
 // Get Email only
 app.get('/user/email', auth, async (req, res) => {
